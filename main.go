@@ -177,11 +177,12 @@ func retrieveUrl(url string) (int, int) {
 
 func main() {
 	// parse command line arguments
-	concurrencyLevel := *flag.Int("c", 5, "Concurrency level.")
-	repetitions := *flag.Int("r", 300, "Number of requests to perform.")
+	var concurrencyLevel, repetitions int
+	flag.IntVar(&concurrencyLevel, "c", 5, "Concurrency level.")
+	flag.IntVar(&repetitions, "r", 300, "Number of requests to perform.")
 	flag.Parse()
-	
 
+	// url is the first non flag argument. If none exists, print the usage and exit.
 	if len(flag.Args()) == 0 {
 		fmt.Println("Girya is a simple HTTP stress tester.\n")
 		fmt.Println("Usage: gyra [options] URL")
