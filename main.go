@@ -68,12 +68,12 @@ func (bm *benchmarkStats) printStats() {
 	fmt.Println("Transferred kilobytes:", bm.transferredBytes/1024)
 	elapsedTime := bm.elapsedTime()
 	fmt.Println("Kilobytes per second:", math.Floor(float64(bm.transferredBytes)/1024.0/elapsedTime.Seconds()))
-	fmt.Println("Elapsed wall-clock time:", elapsedTime.String())
-	fmt.Println("Slowest request:", bm.slowestRequestDuration().String())
-	fmt.Println("Median request:", bm.medianRequestDuration().String())
-	fmt.Println("Fastest request:", bm.fastestRequestDuration().String())
-	fmt.Println("Average request:", bm.averageRequestDuration().String())
-	fmt.Println("Standard deviation:", bm.standardDeviation().String())
+	fmt.Printf("Elapsed wall-clock time: %.2fs\n", elapsedTime.Seconds())
+	fmt.Printf("Slowest request: %.2fs\n", bm.slowestRequestDuration().Seconds())
+	fmt.Printf("Median request: %.2fs\n", bm.medianRequestDuration().Seconds())
+	fmt.Printf("Fastest request: %.2fs\n", bm.fastestRequestDuration().Seconds())
+	fmt.Printf("Average request: %.2fs\n", bm.averageRequestDuration().Seconds())
+	fmt.Printf("Standard deviation: %.2fs\n", bm.standardDeviation().Seconds())
 }
 
 func (bm *benchmarkStats) elapsedTime() time.Duration {
@@ -180,6 +180,7 @@ func main() {
 	concurrencyLevel := *flag.Int("c", 5, "Concurrency level.")
 	repetitions := *flag.Int("r", 300, "Number of requests to perform.")
 	flag.Parse()
+	
 
 	if len(flag.Args()) == 0 {
 		fmt.Println("Girya is a simple HTTP stress tester.\n")
