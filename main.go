@@ -180,7 +180,7 @@ func retrieveUrl(url string) (int, int) {
 func main() {
 	// parse command line arguments
 	var concurrencyLevel, repetitions int
-	flag.IntVar(&concurrencyLevel, "c", 5, "Concurrency level.")
+	flag.IntVar(&concurrencyLevel, "c", 25, "Concurrency level.")
 	flag.IntVar(&repetitions, "r", 300, "Number of requests to perform.")
 	flag.Parse()
 
