@@ -63,6 +63,7 @@ func (bm *benchmarkStats) requestCount() int {
 }
 
 func (bm *benchmarkStats) printStats() {
+	fmt.Println("\n")
 	fmt.Println("Successful requests:", bm.successfulRequests)
 	fmt.Println("Failed requests:", bm.failedRequests)
 	fmt.Println("Transferred kilobytes:", bm.transferredBytes/1024)
@@ -74,6 +75,7 @@ func (bm *benchmarkStats) printStats() {
 	fmt.Printf("Fastest request: %.2fs\n", bm.fastestRequestDuration().Seconds())
 	fmt.Printf("Average request: %.2fs\n", bm.averageRequestDuration().Seconds())
 	fmt.Printf("Standard deviation: %.2fs\n", bm.standardDeviation().Seconds())
+	fmt.Println("")
 }
 
 func (bm *benchmarkStats) elapsedTime() time.Duration {
@@ -204,6 +206,7 @@ func main() {
 		// wait till a result arrives, process it and start a
 		// new worker if required.
 		benchmark.receiveResult()
+		fmt.Print(".")
 		if benchmark.requestsStarted < repetitions {
 			benchmark.measureUrl(url)
 		}
