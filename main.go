@@ -1,47 +1,46 @@
 package main
 
-
 import (
+	"flag"
 	"fmt"
-	"net/http"
 	"io/ioutil"
-	"time"
 	"math"
+	"net/http"
+	"os"
 	"sort"
+	"time"
 )
-
-const repetitions = 600
-const concurrencyLevel = 25
-
 
 type durationSlice []time.Duration
 
 func (p durationSlice) Len() int           { return len(p) }
-func (p durationSlice) Less(i, j int) bool { return p[i] < p[j]}
+func (p durationSlice) Less(i, j int) bool { return p[i] < p[j] }
 func (p durationSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
-
 type benchmarkStats struct {
-	failedRequests int
+	requestsStarted int
+	// concurrent workers running in parallel will feed the
+	// results to a single collector trough this buffered channel.
+	resultChannel      chan *measurement
+	failedRequests     int
 	successfulRequests int
-	transferredBytes int
-	durations durationSlice
-	startedAt time.Time
-	endedAt time.Time
+	transferredBytes   int
+	durations          durationSlice
+	startedAt          time.Time
+	endedAt            time.Time
 }
-
 
 type measurement struct {
-	httpReplySize int
+	httpReplySize  int
 	httpStatusCode int
-	duration time.Duration 
+	duration       time.Duration
 }
 
-
-func NewBenchmarkStats() *benchmarkStats{
+func NewBenchmarkStats(repetitions int, concurrencyLevel int) *benchmarkStats {
 	bm := new(benchmarkStats)
 	bm.durations = make([]time.Duration, 0, repetitions)
 	bm.startedAt = time.Now()
+	bm.resultChannel = make(chan *measurement, concurrencyLevel)
 	return bm
 }
 
@@ -49,7 +48,7 @@ func (bm *benchmarkStats) stop() {
 	bm.endedAt = time.Now()
 }
 
-func (bm *benchmarkStats) appendMeasurement(m *measurement) {
+func (bm *benchmarkStats) recordResult(m *measurement) {
 	if m.httpStatusCode >= 200 && m.httpStatusCode <= 299 {
 		bm.successfulRequests += 1
 		bm.durations = append(bm.durations, m.duration)
@@ -66,9 +65,9 @@ func (bm *benchmarkStats) requestCount() int {
 func (bm *benchmarkStats) printStats() {
 	fmt.Println("Successful requests:", bm.successfulRequests)
 	fmt.Println("Failed requests:", bm.failedRequests)
-	fmt.Println("Transferred kilobytes:", bm.transferredBytes / 1024)
+	fmt.Println("Transferred kilobytes:", bm.transferredBytes/1024)
 	elapsedTime := bm.elapsedTime()
-	fmt.Println("Kilobytes per second:", math.Floor(float64(bm.transferredBytes) / 1024.0 / elapsedTime.Seconds() ) )
+	fmt.Println("Kilobytes per second:", math.Floor(float64(bm.transferredBytes)/1024.0/elapsedTime.Seconds()))
 	fmt.Println("Elapsed wall-clock time:", elapsedTime.String())
 	fmt.Println("Slowest request:", bm.slowestRequestDuration().String())
 	fmt.Println("Median request:", bm.medianRequestDuration().String())
@@ -76,7 +75,6 @@ func (bm *benchmarkStats) printStats() {
 	fmt.Println("Average request:", bm.averageRequestDuration().String())
 	fmt.Println("Standard deviation:", bm.standardDeviation().String())
 }
-
 
 func (bm *benchmarkStats) elapsedTime() time.Duration {
 	return bm.endedAt.Sub(bm.startedAt)
@@ -95,7 +93,6 @@ func (bm *benchmarkStats) averageRequestDuration() time.Duration {
 	return time.Duration(math.Floor(float64(bm.totalTime().Nanoseconds()) / float64(len(bm.durations))))
 }
 
-
 func (bm *benchmarkStats) slowestRequestDuration() time.Duration {
 	max := bm.durations[0]
 	for _, value := range bm.durations {
@@ -105,7 +102,6 @@ func (bm *benchmarkStats) slowestRequestDuration() time.Duration {
 	}
 	return max
 }
-
 
 func (bm *benchmarkStats) fastestRequestDuration() time.Duration {
 	min := bm.durations[0]
@@ -117,7 +113,6 @@ func (bm *benchmarkStats) fastestRequestDuration() time.Duration {
 	return min
 }
 
-
 func (bm *benchmarkStats) medianRequestDuration() time.Duration {
 	length := bm.durations.Len()
 
@@ -125,9 +120,8 @@ func (bm *benchmarkStats) medianRequestDuration() time.Duration {
 	copy(durations, bm.durations)
 	sort.Sort(durations)
 
-	return durations[int(length / 2)]
+	return durations[int(length/2)]
 }
-
 
 func (bm *benchmarkStats) standardDeviation() time.Duration {
 	length := float64(bm.durations.Len())
@@ -143,8 +137,20 @@ func (bm *benchmarkStats) standardDeviation() time.Duration {
 	return time.Duration(math.Floor(math.Sqrt(variance)))
 }
 
+func (bm *benchmarkStats) measureUrl(url string) {
+	bm.requestsStarted += 1
+	go func() {
+		t1 := time.Now()
+		status, size := retrieveUrl(url)
+		t2 := time.Now()
+		bm.resultChannel <- &measurement{size, status, t2.Sub(t1)}
+	}()
+}
 
-
+func (bm *benchmarkStats) receiveResult() {
+	result := <-bm.resultChannel
+	bm.recordResult(result)
+}
 
 func retrieveUrl(url string) (int, int) {
 	resp, err := http.Get(url)
@@ -153,16 +159,15 @@ func retrieveUrl(url string) (int, int) {
 		return 500, 0
 	}
 
-	size := 0 
+	size := 0
 	for header, value := range resp.Header {
 		size += len(header) + len(value)
 	}
 
-
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-	 	fmt.Println("failed to read body ...")
+		fmt.Println("failed to read body ...")
 		return resp.StatusCode, size
 	}
 
@@ -170,32 +175,35 @@ func retrieveUrl(url string) (int, int) {
 	return resp.StatusCode, size
 }
 
-
-
-func recordMeasurement(url string, resultChannel chan *measurement) {
-	go func(){
-		t1 := time.Now()
-		status, size := retrieveUrl(url)
-		t2 := time.Now()
-		resultChannel <- &measurement{size, status, t2.Sub(t1)}
-	}()
-}
-
-
 func main() {
-	measurementChannel := make(chan *measurement, concurrencyLevel)
-	benchmark := NewBenchmarkStats()
-	url := "http://www.google.com/robots.txt"
+	// parse command line arguments
+	concurrencyLevel := *flag.Int("c", 5, "Concurrency level.")
+	repetitions := *flag.Int("r", 300, "Number of requests to perform.")
+	flag.Parse()
 
-	for i:= 0; i < concurrencyLevel; i += 1 {
-		recordMeasurement(url, measurementChannel)
+	if len(flag.Args()) == 0 {
+		fmt.Println("Girya is a simple HTTP stress tester.\n")
+		fmt.Println("Usage: gyra [options] URL")
+		flag.PrintDefaults()
+		fmt.Println("")
+		os.Exit(0)
+	}
+	url := flag.Arg(0)
+
+	// start the benchmark here
+	benchmark := NewBenchmarkStats(repetitions, concurrencyLevel)
+
+	// start the given number of requests in parallel
+	for i := 0; i < concurrencyLevel; i += 1 {
+		benchmark.measureUrl(url)
 	}
 
-	for i:= 0; i < repetitions; i += 1 {
-		m := <- measurementChannel
-		benchmark.appendMeasurement(m)
-		if benchmark.requestCount() < repetitions {
-			recordMeasurement(url, measurementChannel)
+	for i := 0; i < repetitions; i += 1 {
+		// wait till a result arrives, process it and start a
+		// new worker if required.
+		benchmark.receiveResult()
+		if benchmark.requestsStarted < repetitions {
+			benchmark.measureUrl(url)
 		}
 	}
 
